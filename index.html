@@ -1,0 +1,469 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Spreadsheet Tag</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Segoe UI',system-ui,sans-serif;background:#f8f9fa;color:#1a1a1a;height:100vh;overflow:hidden;display:flex;flex-direction:column}
+#app{display:flex;flex-direction:column;height:100vh}
+.screen{display:none;flex-direction:column;align-items:center;justify-content:center;height:100%;padding:2rem}
+.screen.active{display:flex}
+.logo{font-size:2rem;font-weight:700;letter-spacing:-1px;margin-bottom:.25rem}
+.logo span{color:#e24b4a}
+.tagline{color:#888;font-size:.9rem;margin-bottom:2rem}
+.card{background:#fff;border:1px solid #e0e0e0;border-radius:12px;padding:2rem;width:100%;max-width:380px;box-shadow:0 2px 12px rgba(0,0,0,.06)}
+.field{margin-bottom:1rem}
+.field label{display:block;font-size:.8rem;color:#888;margin-bottom:.35rem;text-transform:uppercase;letter-spacing:.05em}
+.field input{width:100%;padding:.6rem .8rem;border:1.5px solid #e0e0e0;border-radius:8px;font-size:.95rem;outline:none;transition:border .15s}
+.field input:focus{border-color:#378add}
+.btn{width:100%;padding:.7rem;border-radius:8px;border:none;font-size:.95rem;font-weight:600;cursor:pointer;transition:opacity .15s,transform .1s}
+.btn:active{transform:scale(.98)}
+.btn-primary{background:#378add;color:#fff}
+.btn-primary:hover{opacity:.9}
+.btn-secondary{background:#f0f0f0;color:#333;margin-top:.6rem}
+.btn-secondary:hover{background:#e4e4e4}
+.divider{text-align:center;color:#bbb;font-size:.8rem;margin:.75rem 0}
+.code-input{text-transform:uppercase;letter-spacing:.2em;font-size:1.2rem;text-align:center}
+.lobby-card{background:#fff;border:1px solid #e0e0e0;border-radius:12px;padding:1.5rem;width:100%;max-width:440px}
+.room-code{font-size:2.5rem;font-weight:700;letter-spacing:.3em;text-align:center;color:#378add;margin:.5rem 0}
+.invite-row{display:flex;gap:.5rem;margin:1rem 0}
+.invite-row input{flex:1;padding:.5rem .75rem;border:1.5px solid #e0e0e0;border-radius:8px;font-size:.8rem;color:#888;outline:none}
+.btn-copy{padding:.5rem .9rem;border:1.5px solid #e0e0e0;border-radius:8px;background:#fff;cursor:pointer;font-size:.8rem;color:#555}
+.btn-copy:hover{background:#f5f5f5}
+.player-list{margin:1rem 0}
+.player-list h3{font-size:.8rem;text-transform:uppercase;letter-spacing:.05em;color:#999;margin-bottom:.6rem}
+.player-item{display:flex;align-items:center;gap:.6rem;padding:.45rem 0;border-bottom:1px solid #f0f0f0}
+.player-item:last-child{border-bottom:none}
+.avatar{width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:.85rem;color:#fff;flex-shrink:0}
+.player-name{font-size:.9rem}
+.player-host{font-size:.72rem;color:#888;margin-left:.25rem}
+.lobby-actions{margin-top:1.25rem;display:flex;flex-direction:column;gap:.5rem}
+.status-bar{font-size:.8rem;color:#888;text-align:center;margin-top:.75rem}
+#game-screen{display:none;flex-direction:column;height:100vh}
+#game-screen.active{display:flex}
+#hud{display:flex;align-items:center;gap:1rem;padding:.4rem .75rem;background:#fff;border-bottom:1px solid #e0e0e0;flex-shrink:0}
+#hud .hud-logo{font-weight:700;font-size:.95rem;letter-spacing:-.5px}
+#hud .hud-logo span{color:#e24b4a}
+#status-msg{flex:1;text-align:center;font-size:.85rem;font-weight:500}
+.tag-flash{animation:flash .4s ease-out}
+@keyframes flash{0%{background:#fff3cd}100%{background:transparent}}
+#hud-players{display:flex;gap:.4rem}
+.hud-avatar{width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:.7rem;font-weight:700;color:#fff;position:relative}
+.hud-avatar.it-badge::after{content:'IT';position:absolute;top:-8px;left:50%;transform:translateX(-50%);font-size:9px;background:#e24b4a;color:#fff;border-radius:4px;padding:0 3px;line-height:14px}
+#btn-end{padding:.35rem .8rem;border:1.5px solid #e24b4a;border-radius:8px;background:#fff;color:#e24b4a;font-size:.8rem;font-weight:600;cursor:pointer}
+#btn-end:hover{background:#e24b4a;color:#fff}
+#grid-wrap{flex:1;overflow:auto}
+#grid-container{display:inline-block;min-width:100%;padding:4px}
+table{border-collapse:collapse;font-size:11px;font-family:'Segoe UI',system-ui,sans-serif}
+th,td{border:1px solid #d0d7de;padding:0}
+th{background:#f6f8fa;font-weight:600;color:#888;text-align:center;position:sticky}
+th.corner{z-index:3}
+th.col-header{top:0;z-index:2;min-width:28px;width:28px;height:22px;line-height:22px}
+th.row-header{left:0;z-index:2;width:36px;min-width:36px;height:24px;line-height:24px;text-align:right;padding-right:4px}
+td{width:28px;min-width:28px;height:24px;background:#fff;position:relative;cursor:default}
+.cell-player{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:18px;height:18px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:8px;font-weight:700;color:#fff}
+.cell-player.is-it{box-shadow:0 0 0 2.5px #e24b4a}
+.cell-player.is-self{box-shadow:0 0 0 2.5px #fff,0 0 0 4px #378add}
+.cell-player.is-it.is-self{box-shadow:0 0 0 2.5px #e24b4a,0 0 0 4.5px #378add}
+.immune{opacity:.5}
+#notif{position:fixed;top:50px;left:50%;transform:translateX(-50%);background:#333;color:#fff;padding:.5rem 1.25rem;border-radius:20px;font-size:.85rem;font-weight:500;opacity:0;transition:opacity .3s;z-index:99;pointer-events:none}
+#notif.show{opacity:1}
+</style>
+</head>
+<body>
+<div id="app">
+<div class="screen active" id="landing-screen">
+  <div class="logo">Spreadsheet <span>Tag</span></div>
+  <div class="tagline">Chase your coworkers across the grid</div>
+  <div class="card">
+    <div class="field">
+      <label>Your display name</label>
+      <input type="text" id="name-input" placeholder="e.g. Alice" maxlength="14" autocomplete="off">
+    </div>
+    <button class="btn btn-primary" id="btn-create">Create new game</button>
+    <div class="divider">or</div>
+    <div class="field">
+      <label>Join with room code</label>
+      <input type="text" id="code-input" class="code-input" placeholder="ABCD" maxlength="4" autocomplete="off">
+    </div>
+    <button class="btn btn-secondary" id="btn-join">Join game</button>
+    <div class="divider">or</div>
+    <button class="btn btn-secondary" id="btn-demo">▶ Play demo (vs bot)</button>
+  </div>
+</div>
+
+<div class="screen" id="lobby-screen">
+  <div class="lobby-card">
+    <div style="text-align:center;font-size:.85rem;color:#999;margin-bottom:.25rem">Room code</div>
+    <div class="room-code" id="lobby-code">ABCD</div>
+    <div class="invite-row">
+      <input type="text" id="invite-url" readonly>
+      <button class="btn-copy" id="btn-copy-link">Copy link</button>
+    </div>
+    <div class="player-list">
+      <h3>Players <span id="player-count">(1/5)</span></h3>
+      <div id="lobby-players"></div>
+    </div>
+    <div class="lobby-actions">
+      <button class="btn btn-primary" id="btn-start">Start game</button>
+      <button class="btn btn-secondary" id="btn-leave">Leave room</button>
+    </div>
+    <div class="status-bar" id="lobby-status">Waiting for players…</div>
+  </div>
+</div>
+
+<div id="game-screen">
+  <div id="hud">
+    <div class="hud-logo">Sheet<span>Tag</span></div>
+    <div id="status-msg">Get ready!</div>
+    <div id="hud-players"></div>
+    <button id="btn-end">End game</button>
+  </div>
+  <div id="grid-wrap">
+    <div id="grid-container"></div>
+  </div>
+</div>
+</div>
+<div id="notif"></div>
+
+<script>
+const SB_URL='https://emazqfbgsaemvhpeiswp.supabase.co';
+const SB_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVtYXpxZmJnc2FlbXZocGVpc3dwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkwOTI4MjMsImV4cCI6MjA5NDY2ODgyM30.AG3woWLckAt1s5atbE1FcYGTioezoxkb0k2FULdi5Z4';
+const HEADERS={'Content-Type':'application/json','apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY};
+
+const COLS=25,ROWS=25,MOVE_CD=120,TAG_IMMUNE=1500,BOT_INTERVAL=600;
+const COLORS=['#378add','#1D9E75','#BA7517','#993556','#534AB7','#993C1D','#3B6D11'];
+
+function colLabel(i){let s='',n=i+1;while(n>0){s=String.fromCharCode(65+(n-1)%26)+s;n=Math.floor((n-1)/26)}return s;}
+function randCode(){return Array.from({length:4},()=>'ABCDEFGHJKLMNPQRSTUVWXYZ'[Math.floor(Math.random()*23)]).join('')}
+function clamp(v,lo,hi){return Math.max(lo,Math.min(hi,v))}
+function oppCorner(r,c){return{r:r<ROWS/2?ROWS-1:0,c:c<COLS/2?COLS-1:0}}
+
+let state={
+  roomCode:'',myId:'',players:{},
+  isHost:false,gameActive:false,demo:false,
+  moveCd:false,botTimer:null,ws:null,wsHeartbeat:null
+};
+
+// ---- Notify ----
+function notify(msg,dur=2500){
+  const n=document.getElementById('notif');
+  n.textContent=msg;n.classList.add('show');
+  clearTimeout(n._t);n._t=setTimeout(()=>n.classList.remove('show'),dur);
+}
+
+// ---- Show screen ----
+function show(id){
+  document.querySelectorAll('.screen,#game-screen').forEach(s=>s.classList.remove('active'));
+  const el=document.getElementById(id);if(el)el.classList.add('active');
+}
+
+// ---- Supabase REST (no library) ----
+async function sbGet(roomCode){
+  const r=await fetch(`${SB_URL}/rest/v1/game_rooms?room_code=eq.${roomCode}&select=state`,{headers:{...HEADERS,'Accept':'application/json'}});
+  if(!r.ok)return null;
+  const d=await r.json();
+  if(!d||!d.length)return null;
+  try{return JSON.parse(d[0].state);}catch{return null;}
+}
+
+async function sbUpsert(roomCode,stateObj){
+  await fetch(`${SB_URL}/rest/v1/game_rooms`,{
+    method:'POST',
+    headers:{...HEADERS,'Prefer':'resolution=merge-duplicates'},
+    body:JSON.stringify({room_code:roomCode,state:JSON.stringify(stateObj),updated_at:new Date().toISOString()})
+  });
+}
+
+// ---- Supabase Realtime (raw WebSocket) ----
+function connectRealtime(){
+  disconnectRealtime();
+  const wsUrl=`${SB_URL.replace('https://','wss://')}/realtime/v1/websocket?apikey=${SB_KEY}&vsn=1.0.0`;
+  const ws=new WebSocket(wsUrl);
+  state.ws=ws;
+
+  ws.onopen=()=>{
+    ws.send(JSON.stringify({topic:'realtime:public:game_rooms:room_code=eq.'+state.roomCode,event:'phx_join',payload:{},ref:'1'}));
+    state.wsHeartbeat=setInterval(()=>{
+      if(ws.readyState===WebSocket.OPEN)
+        ws.send(JSON.stringify({topic:'phoenix',event:'heartbeat',payload:{},ref:'hb'}));
+    },25000);
+  };
+
+  ws.onmessage=e=>{
+    let msg;try{msg=JSON.parse(e.data);}catch{return;}
+    if(msg.event==='phx_reply'&&msg.payload&&msg.payload.status==='ok')return;
+    if(msg.event!=='UPDATE'&&msg.event!=='postgres_changes')return;
+    const record=msg.payload&&(msg.payload.record||(msg.payload.data&&msg.payload.data.record));
+    if(!record||!record.state)return;
+    let remote;try{remote=JSON.parse(record.state);}catch{return;}
+    applyRemoteState(remote);
+  };
+
+  ws.onclose=()=>{
+    clearInterval(state.wsHeartbeat);
+    // reconnect if still in game
+    if(state.roomCode&&!state.demo)setTimeout(connectRealtime,2000);
+  };
+  ws.onerror=()=>ws.close();
+}
+
+function disconnectRealtime(){
+  clearInterval(state.wsHeartbeat);
+  if(state.ws){try{state.ws.close();}catch{}state.ws=null;}
+}
+
+function applyRemoteState(remote){
+  if(!remote||!remote.players)return;
+  // preserve our own local position (already applied) but take all else
+  const myLocal=state.players[state.myId];
+  state.players=remote.players;
+  if(myLocal&&state.players[state.myId]){
+    // keep local r/c if we moved more recently
+    state.players[state.myId].r=myLocal.r;
+    state.players[state.myId].c=myLocal.c;
+  }
+  const wasActive=state.gameActive;
+  state.gameActive=remote.gameActive;
+  if(remote.gameActive&&!wasActive){
+    buildGrid();show('game-screen');renderGrid();scrollToMe();
+  } else if(!remote.gameActive&&wasActive){
+    clearInterval(state.botTimer);
+    goLobby();
+  } else if(state.gameActive){
+    renderGrid();
+  } else {
+    renderLobbyPlayers();
+  }
+}
+
+async function pushState(){
+  if(state.demo)return;
+  await sbUpsert(state.roomCode,{players:state.players,gameActive:state.gameActive});
+}
+
+// ---- Player ----
+function makePlayer(id,name,color,r,c,isIt){
+  return{id,name,initial:name[0].toUpperCase(),color,r,c,isIt,immuneUntil:0};
+}
+
+// ---- Grid ----
+let gridBuilt=false,lastCells={};
+function buildGrid(){
+  if(gridBuilt)return;gridBuilt=true;
+  const cont=document.getElementById('grid-container');
+  let html='<table><thead><tr><th class="col-header corner"></th>';
+  for(let c=0;c<COLS;c++)html+=`<th class="col-header">${colLabel(c)}</th>`;
+  html+='</tr></thead><tbody>';
+  for(let r=0;r<ROWS;r++){
+    html+=`<tr><th class="row-header">${r+1}</th>`;
+    for(let c=0;c<COLS;c++)html+=`<td id="c-${r}-${c}"></td>`;
+    html+='</tr>';
+  }
+  html+='</tbody></table>';
+  cont.innerHTML=html;
+}
+
+function renderGrid(){
+  const now=Date.now();
+  const next={};
+  Object.values(state.players).forEach(p=>next[`c-${p.r}-${p.c}`]=p);
+  Object.keys(lastCells).forEach(k=>{if(!next[k]){const el=document.getElementById(k);if(el)el.innerHTML='';}});
+  Object.entries(next).forEach(([k,p])=>{
+    const td=document.getElementById(k);if(!td)return;
+    const isIt=p.isIt,isSelf=p.id===state.myId,immune=now<(p.immuneUntil||0);
+    let cls='cell-player'+(isIt?' is-it':'')+(isSelf?' is-self':'')+(immune?' immune':'');
+    td.innerHTML=`<div class="${cls}" style="background:${p.color}" title="${p.name}">${p.initial}</div>`;
+  });
+  lastCells=next;
+  renderHud();
+}
+
+function scrollToMe(){
+  const me=state.players[state.myId];if(!me)return;
+  const td=document.getElementById(`c-${me.r}-${me.c}`);
+  if(td)td.scrollIntoView({behavior:'smooth',block:'center',inline:'center'});
+}
+
+function renderHud(){
+  document.getElementById('hud-players').innerHTML=Object.values(state.players).map(p=>
+    `<div class="hud-avatar${p.isIt?' it-badge':''}" style="background:${p.color}" title="${p.name}">${p.initial}</div>`).join('');
+  const me=state.players[state.myId],sm=document.getElementById('status-msg');
+  if(me){
+    if(me.isIt)sm.textContent='You are IT — tag someone!';
+    else{const it=Object.values(state.players).find(p=>p.isIt);sm.textContent=it?`${it.name} is IT — run!`:'Game on!';}
+  }
+}
+
+// ---- Move & tag ----
+function tryMove(dr,dc){
+  if(!state.gameActive||state.moveCd)return;
+  const me=state.players[state.myId];if(!me)return;
+  const nr=clamp(me.r+dr,0,ROWS-1),nc=clamp(me.c+dc,0,COLS-1);
+  if(nr===me.r&&nc===me.c)return;
+  me.r=nr;me.c=nc;
+  state.moveCd=true;setTimeout(()=>state.moveCd=false,MOVE_CD);
+  checkTag(state.myId);
+  renderGrid();scrollToMe();
+  pushState();
+}
+
+function checkTag(moverId){
+  const mover=state.players[moverId];if(!mover)return;
+  const now=Date.now();
+  Object.values(state.players).forEach(p=>{
+    if(p.id===moverId||p.r!==mover.r||p.c!==mover.c)return;
+    if(!mover.isIt&&!p.isIt)return;
+    const itP=mover.isIt?mover:p,taggedP=mover.isIt?p:mover;
+    if(now<(taggedP.immuneUntil||0))return;
+    itP.isIt=false;taggedP.isIt=true;taggedP.immuneUntil=now+TAG_IMMUNE;
+    const opp=oppCorner(taggedP.r,taggedP.c);
+    taggedP.r=opp.r;taggedP.c=opp.c;
+    notify(`${taggedP.id===state.myId?'You are':taggedP.name+' is'} now IT!`);
+    const sm=document.getElementById('status-msg');
+    sm.classList.add('tag-flash');setTimeout(()=>sm.classList.remove('tag-flash'),400);
+  });
+}
+
+// ---- Bot ----
+function botStep(){
+  if(!state.gameActive||!state.demo)return;
+  const bot=state.players['bot1'],me=state.players[state.myId];
+  if(!bot||!me)return;
+  if(!bot.isIt&&Math.random()<.5)return;
+  let dr=0,dc=0;
+  if(bot.isIt){
+    const rd=me.r-bot.r,cd=me.c-bot.c;
+    if(Math.abs(rd)>=Math.abs(cd))dr=Math.sign(rd);else dc=Math.sign(cd);
+  }else{
+    const rd=bot.r-me.r,cd=bot.c-me.c;
+    if(Math.abs(rd)>=Math.abs(cd))dr=Math.sign(rd)||1;else dc=Math.sign(cd)||1;
+    if(bot.r+dr<0||bot.r+dr>=ROWS)dr*=-1;
+    if(bot.c+dc<0||bot.c+dc>=COLS)dc*=-1;
+  }
+  bot.r=clamp(bot.r+dr,0,ROWS-1);bot.c=clamp(bot.c+dc,0,COLS-1);
+  checkTag('bot1');renderGrid();
+}
+
+// ---- Lobby ----
+function renderLobbyPlayers(){
+  const pArr=Object.values(state.players);
+  document.getElementById('player-count').textContent=`(${pArr.length}/5)`;
+  document.getElementById('lobby-players').innerHTML=pArr.map((p,i)=>`
+    <div class="player-item">
+      <div class="avatar" style="background:${p.color}">${p.initial}</div>
+      <span class="player-name">${p.name}</span>
+      ${i===0?'<span class="player-host">(host)</span>':''}
+    </div>`).join('');
+  document.getElementById('btn-start').style.display=state.isHost?'block':'none';
+  document.getElementById('lobby-status').textContent=state.isHost?'Start whenever you\'re ready!':'Waiting for host to start…';
+}
+
+function goLobby(){
+  document.getElementById('lobby-code').textContent=state.roomCode;
+  document.getElementById('invite-url').value=`${location.origin}${location.pathname}?room=${state.roomCode}`;
+  renderLobbyPlayers();
+  show('lobby-screen');
+}
+
+function goLanding(){
+  state.gameActive=false;
+  clearInterval(state.botTimer);
+  disconnectRealtime();
+  gridBuilt=false;lastCells={};
+  state.players={};state.roomCode='';
+  show('landing-screen');
+}
+
+// ---- Button handlers ----
+document.getElementById('btn-create').addEventListener('click',async()=>{
+  const name=document.getElementById('name-input').value.trim();
+  if(!name){notify('Enter your name!');return;}
+  const code=randCode();
+  state.myId='p_'+Math.random().toString(36).slice(2,8);
+  state.roomCode=code;state.isHost=true;state.demo=false;
+  const me=makePlayer(state.myId,name,COLORS[0],0,0,true);
+  state.players={[state.myId]:me};
+  state.gameActive=false;
+  await pushState();
+  connectRealtime();
+  goLobby();
+});
+
+document.getElementById('btn-join').addEventListener('click',async()=>{
+  const name=document.getElementById('name-input').value.trim();
+  const code=document.getElementById('code-input').value.trim().toUpperCase();
+  if(!name){notify('Enter your name!');return;}
+  if(code.length!==4){notify('Enter a 4-character room code!');return;}
+  const remote=await sbGet(code);
+  if(!remote){notify('Room not found! Check the code.');return;}
+  state.roomCode=code;state.isHost=false;state.demo=false;
+  state.myId='p_'+Math.random().toString(36).slice(2,8);
+  state.players=remote.players||{};
+  state.gameActive=remote.gameActive||false;
+  const used=Object.values(state.players).map(p=>p.color);
+  const col=COLORS.find(c=>!used.includes(c))||COLORS[Object.keys(state.players).length%COLORS.length];
+  state.players[state.myId]=makePlayer(state.myId,name,col,ROWS-1,COLS-1,false);
+  await pushState();
+  connectRealtime();
+  goLobby();
+});
+
+document.getElementById('btn-demo').addEventListener('click',()=>{
+  const name=document.getElementById('name-input').value.trim()||'You';
+  state.myId='p1';state.demo=true;state.roomCode='DEMO';state.isHost=true;
+  state.players={
+    p1:makePlayer('p1',name,COLORS[0],12,6,false),
+    bot1:makePlayer('bot1','Bot',COLORS[1],12,18,true)
+  };
+  buildGrid();show('game-screen');state.gameActive=true;
+  renderGrid();scrollToMe();
+  state.botTimer=setInterval(botStep,BOT_INTERVAL);
+  notify('Demo mode — arrow keys or WASD!',3000);
+});
+
+document.getElementById('btn-copy-link').addEventListener('click',()=>{
+  const url=document.getElementById('invite-url').value;
+  navigator.clipboard.writeText(url).then(()=>notify('Link copied!')).catch(()=>notify('Copy: '+url));
+});
+
+document.getElementById('btn-start').addEventListener('click',async()=>{
+  if(!state.isHost)return;
+  const pArr=Object.values(state.players);
+  if(pArr.length<2){notify('Need at least 2 players!');return;}
+  if(!pArr.some(p=>p.isIt))pArr[0].isIt=true;
+  state.gameActive=true;
+  await pushState();
+  buildGrid();show('game-screen');renderGrid();scrollToMe();
+});
+
+document.getElementById('btn-leave').addEventListener('click',goLanding);
+
+document.getElementById('btn-end').addEventListener('click',async()=>{
+  clearInterval(state.botTimer);
+  if(state.demo){goLanding();return;}
+  state.gameActive=false;
+  await pushState();
+  goLobby();
+});
+
+document.addEventListener('keydown',e=>{
+  const map={ArrowUp:[-1,0],ArrowDown:[1,0],ArrowLeft:[0,-1],ArrowRight:[0,1],
+    w:[-1,0],s:[1,0],a:[0,-1],d:[0,1]};
+  const mv=map[e.key];
+  if(mv){e.preventDefault();tryMove(mv[0],mv[1]);}
+});
+
+(()=>{
+  const params=new URLSearchParams(location.search);
+  const room=params.get('room');
+  if(room&&room.length===4){
+    document.getElementById('code-input').value=room.toUpperCase();
+    notify('Room code pre-filled — enter your name and join!',3000);
+  }
+})();
+</script>
+</body>
+</html>
