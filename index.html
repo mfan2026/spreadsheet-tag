@@ -131,9 +131,9 @@ td{width:28px;min-width:28px;height:24px;background:#fff;position:relative;curso
 <script>
 const SB_URL='https://emazqfbgsaemvhpeiswp.supabase.co';
 const SB_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVtYXpxZmJnc2FlbXZocGVpc3dwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkwOTI4MjMsImV4cCI6MjA5NDY2ODgyM30.AG3woWLckAt1s5atbE1FcYGTioezoxkb0k2FULdi5Z4';
-const HEADERS={'Content-Type':'application/json','apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY};
+const HDR={'Content-Type':'application/json','apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY};
 
-const COLS=25,ROWS=25,MOVE_CD=120,TAG_IMMUNE=1500,BOT_INTERVAL=600;
+const COLS=25,ROWS=25,MOVE_CD=120,TAG_IMMUNE=1500,BOT_INTERVAL=600,SYNC_INTERVAL=100;
 const COLORS=['#378add','#1D9E75','#BA7517','#993556','#534AB7','#993C1D','#3B6D11'];
 
 function colLabel(i){let s='',n=i+1;while(n>0){s=String.fromCharCode(65+(n-1)%26)+s;n=Math.floor((n-1)/26)}return s;}
@@ -144,46 +144,65 @@ function oppCorner(r,c){return{r:r<ROWS/2?ROWS-1:0,c:c<COLS/2?COLS-1:0}}
 let state={
   roomCode:'',myId:'',players:{},
   isHost:false,gameActive:false,demo:false,
-  moveCd:false,botTimer:null,ws:null,wsHeartbeat:null
+  moveCd:false,botTimer:null,ws:null,wsHeartbeat:null,
+  syncTimer:null,dirty:false
 };
 
-// ---- Notify ----
 function notify(msg,dur=2500){
   const n=document.getElementById('notif');
   n.textContent=msg;n.classList.add('show');
   clearTimeout(n._t);n._t=setTimeout(()=>n.classList.remove('show'),dur);
 }
-
-// ---- Show screen ----
 function show(id){
   document.querySelectorAll('.screen,#game-screen').forEach(s=>s.classList.remove('active'));
   const el=document.getElementById(id);if(el)el.classList.add('active');
 }
 
-// ---- Supabase REST (no library) ----
-async function sbGet(roomCode){
-  const r=await fetch(`${SB_URL}/rest/v1/game_rooms?room_code=eq.${roomCode}&select=state`,{headers:{...HEADERS,'Accept':'application/json'}});
-  if(!r.ok)return null;
-  const d=await r.json();
-  if(!d||!d.length)return null;
-  try{return JSON.parse(d[0].state);}catch{return null;}
+// ---- Supabase REST ----
+async function sbGet(code){
+  try{
+    const r=await fetch(`${SB_URL}/rest/v1/game_rooms?room_code=eq.${code}&select=state`,{headers:{...HDR,'Accept':'application/json'}});
+    if(!r.ok)return null;
+    const d=await r.json();
+    if(!d||!d.length)return null;
+    return JSON.parse(d[0].state);
+  }catch{return null;}
+}
+async function sbUpsert(code,obj){
+  try{
+    await fetch(`${SB_URL}/rest/v1/game_rooms`,{
+      method:'POST',
+      headers:{...HDR,'Prefer':'resolution=merge-duplicates'},
+      body:JSON.stringify({room_code:code,state:JSON.stringify(obj),updated_at:new Date().toISOString()})
+    });
+  }catch{}
 }
 
-async function sbUpsert(roomCode,stateObj){
-  await fetch(`${SB_URL}/rest/v1/game_rooms`,{
-    method:'POST',
-    headers:{...HEADERS,'Prefer':'resolution=merge-duplicates'},
-    body:JSON.stringify({room_code:roomCode,state:JSON.stringify(stateObj),updated_at:new Date().toISOString()})
-  });
+// ---- Batched sync ----
+// Only push when dirty, on a fixed interval — reduces round-trips dramatically
+function startSyncLoop(){
+  stopSyncLoop();
+  state.syncTimer=setInterval(async()=>{
+    if(!state.dirty||state.demo)return;
+    state.dirty=false;
+    await sbUpsert(state.roomCode,{players:state.players,gameActive:state.gameActive});
+  },SYNC_INTERVAL);
+}
+function stopSyncLoop(){clearInterval(state.syncTimer);state.syncTimer=null;}
+function markDirty(){state.dirty=true;}
+
+// Force-push immediately (for lobby joins, game start/end)
+async function pushNow(){
+  state.dirty=false;
+  await sbUpsert(state.roomCode,{players:state.players,gameActive:state.gameActive});
 }
 
-// ---- Supabase Realtime (raw WebSocket) ----
+// ---- Realtime ----
 function connectRealtime(){
   disconnectRealtime();
   const wsUrl=`${SB_URL.replace('https://','wss://')}/realtime/v1/websocket?apikey=${SB_KEY}&vsn=1.0.0`;
   const ws=new WebSocket(wsUrl);
   state.ws=ws;
-
   ws.onopen=()=>{
     ws.send(JSON.stringify({topic:'realtime:public:game_rooms:room_code=eq.'+state.roomCode,event:'phx_join',payload:{},ref:'1'}));
     state.wsHeartbeat=setInterval(()=>{
@@ -191,57 +210,53 @@ function connectRealtime(){
         ws.send(JSON.stringify({topic:'phoenix',event:'heartbeat',payload:{},ref:'hb'}));
     },25000);
   };
-
   ws.onmessage=e=>{
     let msg;try{msg=JSON.parse(e.data);}catch{return;}
-    if(msg.event==='phx_reply'&&msg.payload&&msg.payload.status==='ok')return;
+    if(msg.event==='phx_reply'&&msg.payload?.status==='ok')return;
     if(msg.event!=='UPDATE'&&msg.event!=='postgres_changes')return;
-    const record=msg.payload&&(msg.payload.record||(msg.payload.data&&msg.payload.data.record));
-    if(!record||!record.state)return;
+    const record=msg.payload?.record||(msg.payload?.data?.record);
+    if(!record?.state)return;
     let remote;try{remote=JSON.parse(record.state);}catch{return;}
-    applyRemoteState(remote);
+    applyRemote(remote);
   };
-
   ws.onclose=()=>{
     clearInterval(state.wsHeartbeat);
-    // reconnect if still in game
     if(state.roomCode&&!state.demo)setTimeout(connectRealtime,2000);
   };
   ws.onerror=()=>ws.close();
 }
-
 function disconnectRealtime(){
   clearInterval(state.wsHeartbeat);
   if(state.ws){try{state.ws.close();}catch{}state.ws=null;}
 }
 
-function applyRemoteState(remote){
-  if(!remote||!remote.players)return;
-  // preserve our own local position (already applied) but take all else
-  const myLocal=state.players[state.myId];
-  state.players=remote.players;
-  if(myLocal&&state.players[state.myId]){
-    // keep local r/c if we moved more recently
-    state.players[state.myId].r=myLocal.r;
-    state.players[state.myId].c=myLocal.c;
-  }
+function applyRemote(remote){
+  if(!remote?.players)return;
   const wasActive=state.gameActive;
+
+  // For each remote player: if it's us, keep our local r/c/isIt (we are authoritative for ourselves)
+  // For everyone else, take remote state wholesale — no merging, no position guessing
+  const merged={};
+  Object.values(remote.players).forEach(p=>{
+    if(p.id===state.myId){
+      // Keep our local position but accept remote isIt/immuneUntil in case we were tagged
+      merged[p.id]={...p, r:state.players[p.id]?.r??p.r, c:state.players[p.id]?.c??p.c};
+    } else {
+      merged[p.id]=p;
+    }
+  });
+  state.players=merged;
   state.gameActive=remote.gameActive;
+
   if(remote.gameActive&&!wasActive){
     buildGrid();show('game-screen');renderGrid();scrollToMe();
   } else if(!remote.gameActive&&wasActive){
-    clearInterval(state.botTimer);
-    goLobby();
+    stopSyncLoop();goLobby();
   } else if(state.gameActive){
     renderGrid();
   } else {
     renderLobbyPlayers();
   }
-}
-
-async function pushState(){
-  if(state.demo)return;
-  await sbUpsert(state.roomCode,{players:state.players,gameActive:state.gameActive});
 }
 
 // ---- Player ----
@@ -307,7 +322,7 @@ function tryMove(dr,dc){
   state.moveCd=true;setTimeout(()=>state.moveCd=false,MOVE_CD);
   checkTag(state.myId);
   renderGrid();scrollToMe();
-  pushState();
+  markDirty();
 }
 
 function checkTag(moverId){
@@ -324,6 +339,7 @@ function checkTag(moverId){
     notify(`${taggedP.id===state.myId?'You are':taggedP.name+' is'} now IT!`);
     const sm=document.getElementById('status-msg');
     sm.classList.add('tag-flash');setTimeout(()=>sm.classList.remove('tag-flash'),400);
+    markDirty();
   });
 }
 
@@ -371,23 +387,23 @@ function goLobby(){
 function goLanding(){
   state.gameActive=false;
   clearInterval(state.botTimer);
+  stopSyncLoop();
   disconnectRealtime();
   gridBuilt=false;lastCells={};
   state.players={};state.roomCode='';
   show('landing-screen');
 }
 
-// ---- Button handlers ----
+// ---- Buttons ----
 document.getElementById('btn-create').addEventListener('click',async()=>{
   const name=document.getElementById('name-input').value.trim();
   if(!name){notify('Enter your name!');return;}
   const code=randCode();
   state.myId='p_'+Math.random().toString(36).slice(2,8);
   state.roomCode=code;state.isHost=true;state.demo=false;
-  const me=makePlayer(state.myId,name,COLORS[0],0,0,true);
-  state.players={[state.myId]:me};
+  state.players={[state.myId]:makePlayer(state.myId,name,COLORS[0],0,0,true)};
   state.gameActive=false;
-  await pushState();
+  await pushNow();
   connectRealtime();
   goLobby();
 });
@@ -406,7 +422,7 @@ document.getElementById('btn-join').addEventListener('click',async()=>{
   const used=Object.values(state.players).map(p=>p.color);
   const col=COLORS.find(c=>!used.includes(c))||COLORS[Object.keys(state.players).length%COLORS.length];
   state.players[state.myId]=makePlayer(state.myId,name,col,ROWS-1,COLS-1,false);
-  await pushState();
+  await pushNow();
   connectRealtime();
   goLobby();
 });
@@ -435,7 +451,8 @@ document.getElementById('btn-start').addEventListener('click',async()=>{
   if(pArr.length<2){notify('Need at least 2 players!');return;}
   if(!pArr.some(p=>p.isIt))pArr[0].isIt=true;
   state.gameActive=true;
-  await pushState();
+  await pushNow();
+  startSyncLoop();
   buildGrid();show('game-screen');renderGrid();scrollToMe();
 });
 
@@ -443,9 +460,10 @@ document.getElementById('btn-leave').addEventListener('click',goLanding);
 
 document.getElementById('btn-end').addEventListener('click',async()=>{
   clearInterval(state.botTimer);
+  stopSyncLoop();
   if(state.demo){goLanding();return;}
   state.gameActive=false;
-  await pushState();
+  await pushNow();
   goLobby();
 });
 
@@ -458,9 +476,9 @@ document.addEventListener('keydown',e=>{
 });
 
 (()=>{
-  const params=new URLSearchParams(location.search);
-  const room=params.get('room');
-  if(room&&room.length===4){
+  const p=new URLSearchParams(location.search);
+  const room=p.get('room');
+  if(room?.length===4){
     document.getElementById('code-input').value=room.toUpperCase();
     notify('Room code pre-filled — enter your name and join!',3000);
   }
